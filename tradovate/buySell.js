@@ -32,15 +32,14 @@ class buySellDots {
     this.hmaShort = WMA(hmaPeriod / 2);
     this.hmaSqrt = WMA(Math.sqrt(hmaPeriod));
     
-    // PSAR
-    this.psarHighs = [];
-    this.psarLows = [];
-    this.psarAF = this.props.psarStep;
-    this.psarMaxAF = this.props.psarMaxStep;
+    // PSAR - replaced with paste.txt implementation
+    this.psarHighest = new MovingHigh();
+    this.psarLowest = new MovingLow();
     this.psarUptrend = true;
-    this.psarEP = 0;
-    this.psarSAR = 0;
-    this.psarNextSAR = 0;
+    this.psarRisingSAR = null;
+    this.psarFallingSAR = null;
+    this.psarRisingAF = this.props.psarStep;
+    this.psarFallingAF = this.props.psarStep;
   }
 
   map(d, i, history) {
@@ -52,90 +51,109 @@ class buySellDots {
     let bullishSignal;
     let bearishSignal;
     
-    // Store highs and lows for PSAR calculation
-    this.psarHighs.push(high);
-    this.psarLows.push(low);
+    // Calculate PSAR using paste.txt implementation
+    let psarValue = null;
+    const step = this.props.psarStep;
+    const maxStep = this.props.psarMaxStep;
+    const prevUptrend = this.psarUptrend;
     
-    // Calculate PSAR
-    let psarValue = 0;
-    let psarTrend = true; // true = bullish (PSAR below candle), false = bearish (PSAR above candle)
-    
-    if (i >= 1) {
-      // First point initialization
-      if (i === 1) {
-        // Initialize PSAR
-        if (this.psarHighs[0] < this.psarHighs[1]) {
-          // Uptrend
-          this.psarSAR = this.psarLows[0];
-          this.psarEP = this.psarHighs[1];
-          this.psarUptrend = true;
-        } else {
-          // Downtrend
-          this.psarSAR = this.psarHighs[0];
-          this.psarEP = this.psarLows[1];
-          this.psarUptrend = false;
-        }
-        this.psarAF = this.props.psarStep;
-      } else {
-        // Regular calculation
-        this.psarSAR = this.psarNextSAR;
-        
-        // Check if trend reversed
-        if (this.psarUptrend) {
-          if (low < this.psarSAR) {
-            // Trend reversal - switch to downtrend
-            this.psarUptrend = false;
-            this.psarSAR = this.psarEP;
-            this.psarEP = low;
-            this.psarAF = this.props.psarStep;
-          }
-        } else {
-          if (high > this.psarSAR) {
-            // Trend reversal - switch to uptrend
-            this.psarUptrend = true;
-            this.psarSAR = this.psarEP;
-            this.psarEP = high;
-            this.psarAF = this.props.psarStep;
-          }
-        }
-        
-        // If no reversal, check for new EP
-        if (this.psarUptrend) {
-          if (high > this.psarEP) {
-            this.psarEP = high;
-            this.psarAF = Math.min(this.psarAF + this.props.psarStep, this.psarMaxAF);
-          }
-        } else {
-          if (low < this.psarEP) {
-            this.psarEP = low;
-            this.psarAF = Math.min(this.psarAF + this.props.psarStep, this.psarMaxAF);
-          }
-        }
+    const getRisingSAR = prevRisingSAR => {
+      if (prevRisingSAR === null) {
+        prevRisingSAR = low;
       }
-      
-      // Calculate next SAR
-      this.psarNextSAR = this.psarSAR + this.psarAF * (this.psarEP - this.psarSAR);
-      
-      // Ensure SAR is correctly positioned
+      // Current SAR = Prior SAR + Prior AF(Prior EP - Prior SAR)
+      this.psarRisingSAR =
+        prevRisingSAR +
+        this.psarRisingAF * (this.psarHighest.current() - prevRisingSAR);
+      // Ensure risingSAR is below the previous 2 lows
+      if (i > 2) {
+        this.psarRisingSAR =
+          this.psarRisingSAR > history.prior().low() ||
+          this.psarRisingSAR > history.back(2).low()
+            ? Math.min(history.prior().low(), history.back(2).low())
+            : this.psarRisingSAR;
+      }
+      this.psarRisingAF =
+        high > this.psarHighest.current()
+          ? Math.min(this.psarRisingAF + step, maxStep)
+          : this.psarRisingAF;
+      return this.psarRisingSAR;
+    };
+
+    const getFallingSAR = prevFallingSAR => {
+      if (prevFallingSAR === null) {
+        prevFallingSAR = high;
+      }
+      // Current SAR = Prior SAR - Prior AF(Prior SAR - Prior EP)
+      this.psarFallingSAR =
+        prevFallingSAR -
+        this.psarFallingAF * (prevFallingSAR - this.psarLowest.current());
+      // Ensure fallingSAR is above previous 2 highs
+      if (i > 2) {
+        this.psarFallingSAR =
+          this.psarFallingSAR < history.prior().high() ||
+          this.psarFallingSAR < history.back(2).high()
+            ? Math.max(history.prior().high(), history.back(2).high())
+            : this.psarFallingSAR;
+      }
+      this.psarFallingAF =
+        low < this.psarLowest.current()
+          ? Math.min(this.psarFallingAF + step, maxStep)
+          : this.psarFallingAF;
+      return this.psarFallingSAR;
+    };
+
+    // Must be at least 2 prior periods
+    if (i > 1) {
       if (this.psarUptrend) {
-        // In uptrend, SAR must be below the lows of the previous 2 periods
-        if (i >= 2) {
-          this.psarNextSAR = Math.min(this.psarNextSAR, this.psarLows[i-1], this.psarLows[i-2]);
-        } else if (i >= 1) {
-          this.psarNextSAR = Math.min(this.psarNextSAR, this.psarLows[i-1]);
+        // Rising SAR
+        const prevRisingSAR =
+          this.psarRisingSAR === null ? low : this.psarRisingSAR;
+        psarValue = getRisingSAR(prevRisingSAR);
+
+        // Stop And Reverse Trend
+        if (psarValue < prevRisingSAR) {
+          this.psarUptrend = false;
+          this.psarRisingSAR = null;
+          this.psarFallingAF = step;
+          this.psarHighest.reset();
+          this.psarLowest.reset();
+          this.psarHighest.push(high);
+          this.psarLowest.push(low);
+          psarValue = getFallingSAR(null);
         }
       } else {
-        // In downtrend, SAR must be above the highs of the previous 2 periods
-        if (i >= 2) {
-          this.psarNextSAR = Math.max(this.psarNextSAR, this.psarHighs[i-1], this.psarHighs[i-2]);
-        } else if (i >= 1) {
-          this.psarNextSAR = Math.max(this.psarNextSAR, this.psarHighs[i-1]);
+        // Falling SAR
+        const prevFallingSAR =
+          this.psarFallingSAR === null ? high : this.psarFallingSAR;
+        psarValue = getFallingSAR(prevFallingSAR);
+
+        // Stop And Reverse Trend
+        if (psarValue > prevFallingSAR) {
+          this.psarUptrend = true;
+          this.psarFallingSAR = null;
+          this.psarRisingAF = step;
+          this.psarHighest.reset();
+          this.psarLowest.reset();
+          this.psarHighest.push(high);
+          this.psarLowest.push(low);
+          psarValue = getRisingSAR(null);
         }
       }
-      
-      psarValue = this.psarSAR;
-      psarTrend = this.psarUptrend;
+
+      // Track High and Low
+      if (prevUptrend === this.psarUptrend) {
+        this.psarHighest.push(high);
+        this.psarLowest.push(low);
+      }
+    } else {
+      this.psarHighest.push(high);
+      this.psarLowest.push(low);
+      psarValue = i === 1 ? (this.psarUptrend ? low : high) : null;
     }
+
+    // For the first period when psarValue is null, set a default for trend
+    const psarTrend = psarValue === null ? true : this.psarUptrend;
 
     // Waddah calculations
     const stdev = this.stdDev(price);

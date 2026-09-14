@@ -1,0 +1,115 @@
+//@version=6
+indicator(title = "Pivot Boss", shorttitle = "Pivots", overlay = true)
+
+// ==========================
+// User Inputs
+// ==========================
+pivottimeframe  = input.string('D', title = 'Pivot Resolution', options = ['D', 'W', 'M', '60'])
+cp              = input(false, title = 'Show Pivots')
+disp_c_labels   = input(false, title = 'Display Pivot Labels')
+label_size      = input.string('small', title = 'Label size', options = ['auto', 'tiny', 'small', 'normal', 'large', 'huge'])
+
+// Determine label size constant
+l_size = label_size == 'auto'   ? size.auto   : 
+         label_size == 'tiny'   ? size.tiny   : 
+         label_size == 'small'  ? size.small  : 
+         label_size == 'normal' ? size.normal : 
+         label_size == 'large'  ? size.large  : size.huge
+
+// ==========================
+// Data & Pivot Calculations
+// ==========================
+// 'dp' prefix implies daily/resolution pivot calculation
+dpopen  = request.security(syminfo.tickerid, pivottimeframe, open[1], barmerge.gaps_off, barmerge.lookahead_on)
+dphigh  = request.security(syminfo.tickerid, pivottimeframe, high[1], barmerge.gaps_off, barmerge.lookahead_on)
+dplow   = request.security(syminfo.tickerid, pivottimeframe, low[1], barmerge.gaps_off, barmerge.lookahead_on)
+dpclose = request.security(syminfo.tickerid, pivottimeframe, close[1], barmerge.gaps_off, barmerge.lookahead_on)
+dprange = dphigh - dplow
+
+// Rounding levels to minimum tick
+nround(x) => 
+    math.round(x / syminfo.mintick) * syminfo.mintick
+
+display_value = true
+
+// Expanded Camarilla Pivots Formula
+h1 = dpclose + dprange * (1.1 / 12)
+h2 = dpclose + dprange * (1.1 / 6)
+h3 = dpclose + dprange * (1.1 / 4)
+h4 = dpclose + dprange * (1.1 / 2)
+h5 = dphigh / dplow * dpclose
+
+l1 = dpclose - dprange * (1.1 / 12)
+l2 = dpclose - dprange * (1.1 / 6)
+l3 = dpclose - dprange * (1.1 / 4)
+l4 = dpclose - dprange * (1.1 / 2)
+l5 = dpclose - (h5 - dpclose)
+
+// HV, 1DexpMax/Min, rangedailyMax/Min Calculations
+levelrange = (h3 - l3) / 2
+hv         = (l3 + h3) / 2
+rd0        = hv + (levelrange / 2)
+sd0        = hv - (levelrange / 2)
+depmax     = h4 + levelrange
+rangemax   = depmax + levelrange
+depmin     = l4 - levelrange
+rangemin   = depmin - levelrange
+
+// ==========================
+// Dynamic Labels Rendering
+// ==========================
+label_h3 = disp_c_labels ? label.new(bar_index, h3, text = display_value ? ' RD1 ' + str.tostring(nround(h3)) : 'RD1', style = label.style_none, textcolor = color.red, size = l_size) : na
+label.delete(label_h3[1])
+
+label_h4 = disp_c_labels ? label.new(bar_index, h4, text = display_value ? ' RD2 ' + str.tostring(nround(h4)) : 'RD2', style = label.style_none, textcolor = color.red, size = l_size) : na
+label.delete(label_h4[1])
+
+label_h5 = disp_c_labels ? label.new(bar_index, h5, text = display_value ? ' VAH ' + str.tostring(nround(h5)) : 'VAH', style = label.style_none, textcolor = color.blue, size = l_size) : na
+label.delete(label_h5[1])
+
+label_l3 = disp_c_labels ? label.new(bar_index, l3, text = display_value ? ' SD1 ' + str.tostring(nround(l3)) : 'SD1', style = label.style_none, textcolor = color.green, size = l_size) : na
+label.delete(label_l3[1])
+
+label_l4 = disp_c_labels ? label.new(bar_index, l4, text = display_value ? ' SD2 ' + str.tostring(nround(l4)) : 'SD2', style = label.style_none, textcolor = color.green, size = l_size) : na
+label.delete(label_l4[1])
+
+label_l5 = disp_c_labels ? label.new(bar_index, l5, text = display_value ? ' VAL ' + str.tostring(nround(l5)) : 'VAL', style = label.style_none, textcolor = color.blue, size = l_size) : na
+label.delete(label_l5[1])
+
+label_hv = disp_c_labels ? label.new(bar_index, hv, text = display_value ? ' HV ' + str.tostring(nround(hv)) : 'HV', style = label.style_none, textcolor = color.black, size = l_size) : na
+label.delete(label_hv[1])
+
+label_depmax = disp_c_labels ? label.new(bar_index, depmax, text = display_value ? ' 1DepMAX ' + str.tostring(nround(depmax)) : '1DepMAX', style = label.style_none, textcolor = color.red, size = l_size) : na
+label.delete(label_depmax[1])
+
+label_rangemax = disp_c_labels ? label.new(bar_index, rangemax, text = display_value ? ' rangeMax ' + str.tostring(nround(rangemax)) : 'rangeMax', style = label.style_none, textcolor = color.red, size = l_size) : na
+label.delete(label_rangemax[1])
+
+label_depmin = disp_c_labels ? label.new(bar_index, depmin, text = display_value ? ' 1DepMIN ' + str.tostring(nround(depmin)) : '1DepMIN', style = label.style_none, textcolor = color.green, size = l_size) : na
+label.delete(label_depmin[1])
+
+label_rangemin = disp_c_labels ? label.new(bar_index, rangemin, text = display_value ? ' rangeMin ' + str.tostring(nround(rangemin)) : 'rangeMin', style = label.style_none, textcolor = color.green, size = l_size) : na
+label.delete(label_rangemin[1])
+
+label_rd0 = disp_c_labels ? label.new(bar_index, rd0, text = display_value ? ' RD0 ' + str.tostring(nround(rd0)) : 'RD0', style = label.style_none, textcolor = color.red, size = l_size) : na
+label.delete(label_rd0[1])
+
+label_sd0 = disp_c_labels ? label.new(bar_index, sd0, text = display_value ? ' SD0 ' + str.tostring(nround(sd0)) : 'SD0', style = label.style_none, textcolor = color.green, size = l_size) : na
+label.delete(label_sd0[1])
+
+// ==========================
+// Plotting Lines
+// ==========================
+plot(cp and bool(h5) ? h5 : na, title = 'H5', color = h5 != h5[1] ? na : color.blue)
+plot(cp and bool(h4) ? h4 : na, title = 'H4', color = h4 != h4[1] ? na : color.red)
+plot(cp and bool(h3) ? h3 : na, title = 'H3', color = h3 != h3[1] ? na : color.red)
+plot(cp and bool(l3) ? l3 : na, title = 'L3', color = l3 != l3[1] ? na : color.green)
+plot(cp and bool(l4) ? l4 : na, title = 'L4', color = l4 != l4[1] ? na : color.green)
+plot(cp and bool(l5) ? l5 : na, title = 'L5', color = l5 != l5[1] ? na : color.blue)
+plot(cp and bool(hv) ? hv : na, title = 'HV', color = hv != hv[1] ? na : color.black)
+plot(cp and bool(depmax) ? depmax : na, title = '1DepMAX', color = depmax != depmax[1] ? na : color.red)
+plot(cp and bool(rangemax) ? rangemax : na, title = 'rangeMax', color = rangemax != rangemax[1] ? na : color.red)
+plot(cp and bool(depmin) ? depmin : na, title = '1DepMin', color = depmin != depmin[1] ? na : color.green)
+plot(cp and bool(rangemin) ? rangemin : na, title = 'rangeMin', color = rangemin != rangemin[1] ? na : color.green)
+plot(cp and bool(rd0) ? rd0 : na, title = 'RD0', color = rd0 != rd0[1] ? na : color.red)
+plot(cp and bool(sd0) ? sd0 : na, title = 'SD0', color = sd0 != sd0[1] ? na : color.green)
